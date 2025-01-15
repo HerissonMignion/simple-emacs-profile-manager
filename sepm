@@ -1,0 +1,308 @@
+#!/bin/bash
+
+# simple emacs profile manager
+
+
+datadir=~/.local/share/sepm;
+profilesdir=$datadir/profiles;
+initfile=$datadir/init_done;
+
+
+
+
+help() {
+	cat <<HELP;
+SYNOPSIS
+
+	$(basename "$0") [-h] <command> [<arguments>]...
+
+DESCRIPTION
+
+	A simple profile manager for emacs. Manages multiple emacs
+	"profile" by turning .emacs.d into a symlink to another folder and
+	letting you switch and create new folders at will.
+
+COMMANDS
+
+	init
+
+		Create sepm's local storage and moves your .emacs.d inside.
+
+	status
+
+		Shows the last "use" command.
+
+	ls [-- [<options>]...]
+
+		Shows all existing profiles by running the ls command in the
+		directory containing the profile. Use -- once to escape the
+		arguments provided to ls.
+
+	use <name>
+
+		Changes which folder ~/.emacs.d is a symlink to.
+
+	fork [--use] <name>
+
+		Creates a new profile called <name> by copying the current
+		profile. If --use is provided, then use this profile now.
+
+	new [--use] <name>
+
+		Creates a new "empty" profile called <name>, with an empty
+		init.el file. If --use is provided, then use this profile now.
+
+	rm <name>
+
+		Removes the profile called <name>. Be careful.
+
+HELP
+}
+
+
+
+opt_use=0;
+
+
+
+# first pass to separate combined options (-asdf becomes -a -s -d -f)
+trailing_args=();
+while (($#)); do
+	arg=$1;
+	shift;
+	case "$arg" in
+		(--?*)
+			trailing_args+=("$arg");
+			;;
+		(--)
+			trailing_args+=(--);
+			break;
+			;;
+		(-*)
+			for letter in $(echo "${arg#-}" | grep -o .); do
+				trailing_args+=("-$letter");
+			done;
+			;;
+		(*)
+			trailing_args+=("$arg");
+			;;
+	esac;
+done;
+set -- "${trailing_args[@]}" "$@";
+
+trailing_args=();
+while (($#)); do
+	arg=$1;
+	shift;
+	case "$arg" in
+		(-h|--help)
+			help;
+			exit 0;
+			;;
+		(--use)
+			opt_use=1;
+			;;
+		(--)
+			break;
+			;;
+		(-*)
+			>&2 echo "Unknown option: $arg";
+			exit 1;
+			;;
+		(*)
+			trailing_args+=("$arg");
+			;;
+	esac;
+done;
+set -- "${trailing_args[@]}" "$@";
+unset arg letter;
+
+
+
+commands=(
+	init
+	status
+	fork
+	use
+	new
+	ls
+	rm
+);
+
+
+ensure_init() {
+	mkdir -p "$datadir";
+	mkdir -p "$profilesdir";
+	touch "$datadir/last_use";
+
+	# if we are doing the init (instead of ensuring it), only now we have to move the .emacs.d
+	if ! [ -f "$initfile" ]; then
+		mv ~/.emacs.d "$profilesdir/main";
+	fi;
+
+	touch "$initfile";
+}
+
+
+# use the return code to know whether init has been done or not
+test_init() {
+	if [ -f "$initfile" ]; then
+		return 0;
+	fi;
+	# we do the init automatically if there are no .emacs.d
+	if ! [ -d ~/.emacs.d ]; then
+		ensure_init;
+		return 0;
+	fi;
+	return 1;
+}
+
+quit_because_no_init() {
+	>&2 cat <<"ERROR";
+
+You must run the init command. This will copy your .emacs.d folder and
+replace it by a symlink.
+
+After that, run the "use" command to create a symlink to a .emacs.d
+folder.
+
+ERROR
+	exit 1;
+}
+
+
+test_name() {
+	local name=$1;
+	local newname=${name//[.\/ ]/};
+	[ -z "$name" ] && return 1;
+	[ "$newname" == "$name" ];
+	return $?;
+}
+
+quit_because_name() {
+	>&2 cat <<"ERROR";
+
+Please don't use special characters such as ".", " ", or "/" in a
+name.
+
+ERROR
+	exit 1;
+}
+
+
+test_profile_exists() {
+	local name=$1;
+	test_name "$name" || return 1;
+	[ -d "$profilesdir/$name" ];
+	return $?;
+}
+
+
+command_init() {
+    ensure_init;
+}
+
+command_status() {
+	test_init || quit_because_no_init;
+    echo "last use: $(cat "$datadir/last_use")";
+}
+
+command_fork() {
+	test_init || quit_because_no_init;
+
+	local name=$1;
+	test_name "$name" || quit_because_name;
+
+	if test_profile_exists "$name"; then
+		>&2 echo "Cannot create profile $name because the name is already taken.";
+		return 1;
+	fi;
+
+	cp -Lr ~/.emacs.d "$profilesdir/$name";
+	
+    if ((opt_use)); then
+		command_use "$name";
+	fi;
+}
+
+command_use() {
+	test_init || quit_because_no_init;
+
+	local name=$1;
+	if ! test_profile_exists "$name"; then
+		>&2 echo "The profile $name does not exist";
+		return 1;
+	fi;
+
+	rm -rf ~/.emacs.d;
+	ln -s  "$profilesdir/$name" ~/.emacs.d;
+	echo "$name" > "$datadir/last_use";
+}
+
+command_new() {
+	test_init || quit_because_no_init;
+
+	local name=$1;
+	test_name "$name" || quit_because_name;
+
+	if test_profile_exists "$name"; then
+		>&2 echo "Cannot create profile $name because the name is already taken.";
+		return 1;
+	fi;
+
+	local dir=$profilesdir/$name;
+	mkdir -p "$dir";
+	touch "$dir/init.el";
+
+    if ((opt_use)); then
+		command_use "$name";
+	fi;
+}
+
+command_ls() {
+	test_init || quit_because_no_init;
+    ls "$profilesdir" "$@";
+}
+
+command_rm() {
+	test_init || quit_because_no_init;
+
+	local name=$1;
+	test_name "$name" || quit_because_name;
+
+	if ! test_profile_exists "$name"; then
+		>&2 echo "Profile $name does not exist.";
+		return 1;
+	fi;
+	
+	rm -r "$profilesdir/$name";
+}
+
+
+
+
+
+
+
+
+main() {
+	if (($# < 1)); then
+		>&2 echo "No command provided. See --help";
+		exit 1;
+	fi;
+	
+	local command=$1;
+	shift;
+	local candidate;
+	for candidate in "${commands[@]}"; do
+		if [ "$candidate" == "$command" ]; then
+			"command_$command" "$@";
+			return $?;
+			break;
+		fi;
+	done;
+}
+
+
+main "$@";
+exit $?;
