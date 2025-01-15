@@ -301,6 +301,9 @@ main() {
 			break;
 		fi;
 	done;
+
+	>&2 echo "Unknown command: $command";
+	return 1;
 }
 
 
