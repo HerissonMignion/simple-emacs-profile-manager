@@ -35,7 +35,7 @@ COMMANDS
 	ls [-- [<options>]...]
 
 		Shows all existing profiles by running the ls command in the
-		directory containing the profile. Use -- once to escape the
+		directory containing the profiles. Use -- once to escape the
 		arguments provided to ls.
 
 	use <name>
