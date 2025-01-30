@@ -42,10 +42,12 @@ COMMANDS
 
 		Changes which folder ~/.emacs.d is a symlink to.
 
-	fork [--use] <name>
+	fork [--from <name>] [--use] <name>
 
 		Creates a new profile called <name> by copying the current
-		profile. If --use is provided, then use this profile now.
+		profile. If --use is provided, then use this profile now. If
+		--from is provided, then copy this profile instead of the
+		profile currently in use.
 
 	new [--use] <name>
 
@@ -56,12 +58,19 @@ COMMANDS
 
 		Removes the profile called <name>. Be careful.
 
+	with <name> [-- [<options>]...]
+
+		Launch emacs with a profile different than the one currently
+		in use by passing the --init-directory argument to emacs, and
+		optionnaly more arguments.
+
 HELP
 }
 
 
 
 opt_use=0;
+opt_from="";
 
 
 
@@ -102,6 +111,10 @@ while (($#)); do
 		(--use)
 			opt_use=1;
 			;;
+		(--from)
+			opt_from=$1;
+			shift;
+			;;
 		(--)
 			break;
 			;;
@@ -127,6 +140,7 @@ commands=(
 	new
 	ls
 	rm
+	with
 );
 
 
@@ -137,7 +151,9 @@ ensure_init() {
 
 	# if we are doing the init (instead of ensuring it), only now we have to move the .emacs.d
 	if ! [ -f "$initfile" ]; then
-		mv ~/.emacs.d "$profilesdir/main";
+		if [ -d ~/.emacs.d ]; then
+			mv ~/.emacs.d "$profilesdir/main";
+		fi;
 	fi;
 
 	touch "$initfile";
@@ -197,6 +213,13 @@ test_profile_exists() {
 	return $?;
 }
 
+quit_because() {
+	local code=$1;
+	shift;
+	>&2 echo "$@";
+	exit "$code";
+}
+
 
 command_init() {
     ensure_init;
@@ -211,14 +234,26 @@ command_fork() {
 	test_init || quit_because_no_init;
 
 	local name=$1;
-	test_name "$name" || quit_because_name;
+	shift;
 
-	if test_profile_exists "$name"; then
-		>&2 echo "Cannot create profile $name because the name is already taken.";
-		return 1;
+	local src=~/.emacs.d;
+	if [ -n "$opt_from" ]; then
+		test_profile_exists "$opt_from" || \
+			quit_because 1 "The profile $opt_from given to --from does not exist.";
+
+		src=$profilesdir/$opt_from;
 	fi;
 
-	cp -Lr ~/.emacs.d "$profilesdir/$name";
+	(($# > 0)) && quit_because 1 "Too many arguments.";
+	test_name "$name" || quit_because_name;
+
+	test_profile_exists "$name" && \
+		quit_because 1 "Cannot create profile $name because the name is already taken.";
+
+	[ -d "$src" ] || \
+		quit_because 1 "Cannot fork because no profile is currently in use.";
+	
+	cp -Lr "$src" "$profilesdir/$name";
 	
     if ((opt_use)); then
 		command_use "$name";
@@ -229,10 +264,8 @@ command_use() {
 	test_init || quit_because_no_init;
 
 	local name=$1;
-	if ! test_profile_exists "$name"; then
-		>&2 echo "The profile $name does not exist";
-		return 1;
-	fi;
+	test_profile_exists "$name" || \
+		quit_because 1 "The profile $name does not exist.";
 
 	rm -rf ~/.emacs.d;
 	ln -s  "$profilesdir/$name" ~/.emacs.d;
@@ -245,10 +278,8 @@ command_new() {
 	local name=$1;
 	test_name "$name" || quit_because_name;
 
-	if test_profile_exists "$name"; then
-		>&2 echo "Cannot create profile $name because the name is already taken.";
-		return 1;
-	fi;
+	test_profile_exists "$name" && \
+		quit_because 1 "Cannot create profile $name because the name is already taken.";
 
 	local dir=$profilesdir/$name;
 	mkdir -p "$dir";
@@ -270,12 +301,22 @@ command_rm() {
 	local name=$1;
 	test_name "$name" || quit_because_name;
 
-	if ! test_profile_exists "$name"; then
-		>&2 echo "Profile $name does not exist.";
-		return 1;
-	fi;
+	test_profile_exists "$name" || \
+		quit_because 1 "Profile $name does not exist.";
 	
 	rm -r "$profilesdir/$name";
+}
+
+command_with() {
+	test_init || quit_because_no_init;
+	
+	local name=$1;
+	shift;
+
+	test_profile_exists "$name" || \
+		quit_because 1 "The profile $name does not exist.";
+
+	exec emacs --init-directory "$profilesdir/$name" "$@";
 }
 
 
