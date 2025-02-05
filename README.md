@@ -10,7 +10,7 @@ profiles. Nothing fancy.
 
 # Installation
 
-Put the sepm file in your user's or local bin directory and enjoy.
+Put the sepm file in your user's bin or local bin directory and enjoy.
 
 
 
