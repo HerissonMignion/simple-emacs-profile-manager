@@ -9,6 +9,26 @@ initfile=$datadir/init_done;
 
 
 
+quit_because_no_init() {
+	>&2 cat <<ERROR;
+
+You must run the command "sepm init" (If you doubt the following, just
+make a quick backup of your .emacs.d folder beforehand, and delete
+your backup later). The init command will create sepm's data
+directory, move your .emacs.d inside, and rename it as "main".
+
+	sepm's data directory:
+		${datadir}
+
+After that, run the command "sepm ls" to list all your profiles. You
+should see one profile called "main".
+
+Finally, run the command "sepm use main" to make ~/.emacs.d a symlink
+to your profile called "main".
+
+ERROR
+	exit 1;
+}
 
 help() {
 	cat <<HELP;
@@ -19,8 +39,8 @@ SYNOPSIS
 DESCRIPTION
 
 	A simple profile manager for emacs. Manages multiple emacs
-	"profile" by turning .emacs.d into a symlink to another folder and
-	letting you switch and create new folders at will.
+	"profiles" by turning .emacs.d into a symlink to other folders,
+	and you refer to profiles by a name instead of a path.
 
 COMMANDS
 
@@ -40,7 +60,7 @@ COMMANDS
 
 	use <name>
 
-		Changes which folder ~/.emacs.d is a symlink to.
+		Changes which folder (profile) ~/.emacs.d is a symlink to.
 
 	fork [--from <name>] [--use] <name>
 
@@ -62,7 +82,24 @@ COMMANDS
 
 		Launch emacs with a profile different than the one currently
 		in use by passing the --init-directory argument to emacs, and
-		optionnaly more arguments.
+		optionnaly more arguments. --init-directory was introduced in
+		emacs version 29, and this script does not check what emacs
+		version you have.
+
+FILES
+
+	sepm's data directory:
+		${datadir}
+
+	sepm's profiles directory:
+		${profilesdir}
+
+SEE ALSO
+
+	https://github.com/alphapapa/with-emacs.sh
+	https://github.com/plexus/chemacs
+	https://github.com/plexus/chemacs2
+	--init-directory (since emacs version 29)
 
 HELP
 }
@@ -173,18 +210,6 @@ test_init() {
 	return 1;
 }
 
-quit_because_no_init() {
-	>&2 cat <<"ERROR";
-
-You must run the init command. This will copy your .emacs.d folder and
-replace it by a symlink.
-
-After that, run the "use" command to create a symlink to a .emacs.d
-folder.
-
-ERROR
-	exit 1;
-}
 
 
 test_name() {
@@ -255,7 +280,7 @@ command_fork() {
 	
 	cp -Lr "$src" "$profilesdir/$name";
 	
-    if ((opt_use)); then
+	if ((opt_use)); then
 		command_use "$name";
 	fi;
 }
@@ -285,7 +310,7 @@ command_new() {
 	mkdir -p "$dir";
 	touch "$dir/init.el";
 
-    if ((opt_use)); then
+	if ((opt_use)); then
 		command_use "$name";
 	fi;
 }
